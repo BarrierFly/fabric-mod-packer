@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fabric-mod-packer"
+version = "1.0.0"
+description = "把多个 Minecraft Fabric mod 的 jar 打包成一个 Jar-in-Jar 合并包，或解包还原"
+readme = "README.md"
+requires-python = ">=3.8"
+
+[project.scripts]
+fabric-mod-packer = "fabric_mod_packer.cli:main"
