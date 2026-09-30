@@ -24,24 +24,55 @@ def _parse(value):
     return "=", value
 
 
+def _split_version(v):
+    """拆成 (release 段列表, pre-release 标识元组)；build metadata（+ 之后）不参与比较。"""
+    s = str(v).split("+", 1)[0]
+    if "-" in s:
+        release, pre = s.split("-", 1)
+        return release.split("."), tuple(pre.split("."))
+    return s.split("."), ()
+
+
 def _cmp(a, b):
-    """按 '.' 分段比较版本号：数字段按数值、非数字段按字符串、短段按补零对齐。"""
+    """版本号比较，尽量贴近 semver 语义：
 
-    def parts(v):
-        out = []
-        for seg in str(v).split("."):
-            if seg.isdigit():
-                out.append((0, int(seg), ""))
-            else:
-                out.append((1, 0, seg))
-        return out
-
-    pa, pb = parts(a), parts(b)
-    width = max(len(pa), len(pb))
-    pad = (0, 0, "")
-    pa += [pad] * (width - len(pa))
-    pb += [pad] * (width - len(pb))
-    return (pa > pb) - (pa < pb)
+    - release 部分：数字段按数值、数字段小于非数字段（沿用旧实现的粗略排序）、
+      短者补零对齐（1.0 == 1.0.0）；
+    - pre-release 部分（- 之后）：数字标识按数值、数字标识小于字母标识、按 ASCII、
+      前缀相同时短者更小；无 pre-release 的版本更大（1.0.0-beta < 1.0.0）。
+    """
+    release_a, pre_a = _split_version(a)
+    release_b, pre_b = _split_version(b)
+    for x, y in zip(release_a, release_b):
+        if x == y:
+            continue
+        if x.isdigit() and y.isdigit():
+            ix, iy = int(x), int(y)
+            return (ix > iy) - (ix < iy)
+        sx = (1, 0, x) if not x.isdigit() else (0, int(x), "")
+        sy = (1, 0, y) if not y.isdigit() else (0, int(y), "")
+        return (sx > sy) - (sx < sy)
+    rest_a, rest_b = release_a[len(release_b):], release_b[len(release_a):]
+    if rest_a or rest_b:
+        rest = rest_a or rest_b
+        if not all(seg.isdigit() and int(seg) == 0 for seg in rest):
+            # 全为零的尾巴视为补零（1.0 == 1.0.0），否则长的一方更大
+            return 1 if rest_a else -1
+    if pre_a == pre_b:
+        return 0
+    if not pre_a:
+        return 1
+    if not pre_b:
+        return -1
+    for x, y in zip(pre_a, pre_b):
+        if x == y:
+            continue
+        if x.isdigit() and y.isdigit():
+            return (int(x) > int(y)) - (int(x) < int(y))
+        if x.isdigit() != y.isdigit():
+            return -1 if x.isdigit() else 1  # semver：数字标识小于字母标识
+        return (x > y) - (x < y)
+    return (len(pre_a) > len(pre_b)) - (len(pre_a) < len(pre_b))
 
 
 def _satisfied_by(op, bound, ver):

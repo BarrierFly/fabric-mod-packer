@@ -3,21 +3,34 @@
 import argparse
 import glob
 import json
+import re
 import shlex
 import sys
 from pathlib import Path
 
 from . import core
 
+_GLOB_MAGIC = re.compile(r"[*?\[]")
+
 
 def expand_patterns(patterns):
-    """按输入顺序展开文件名/通配符模式；某模式没有匹配到任何文件则报错。"""
+    """按输入顺序展开文件名/通配符模式；某模式没有匹配到任何文件则报错。
+
+    不含通配符的模式按字面路径处理；含通配符但没匹配到、而按字面又存在该路径时
+    也按字面处理（兼容路径里带 [ ] * 等字符的情况）。
+    """
     files = []
     for pattern in patterns:
-        matches = sorted(m for m in glob.glob(pattern) if Path(m).is_file())
-        if not matches:
-            raise core.PackError(f"没有文件匹配：{pattern}")
-        files.extend(matches)
+        if _GLOB_MAGIC.search(pattern):
+            matches = sorted(m for m in glob.glob(pattern) if Path(m).is_file())
+            if not matches:
+                if Path(pattern).is_file():
+                    files.append(pattern)
+                    continue
+                raise core.PackError(f"没有文件匹配：{pattern}")
+            files.extend(matches)
+        else:
+            files.append(pattern)
     return files
 
 
@@ -55,6 +68,9 @@ def cmd_pack(args):
     print("  嵌入 mod:")
     for mod in result.mods:
         print(f"    {mod.id} {mod.version} <- {mod.path}")
+        if mod.nested_ids:
+            nested = "、".join(sorted({nid for nid, _ in mod.nested_ids}))
+            print(f"      自带嵌套: {nested}")
     if result.warnings:
         print("警告:")
         for warning in result.warnings:
